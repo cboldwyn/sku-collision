@@ -73,6 +73,15 @@ def latest_match(data_dir: str, pattern: str):
     return max(hits, key=os.path.getmtime) if hits else None
 
 
+def resolve_default_dir() -> str:
+    """Local export folder if it exists, else a writable ./data dir (hosted/Cloud)."""
+    if os.path.isdir(DEFAULT_DATA_DIR):
+        return DEFAULT_DATA_DIR
+    local = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+    os.makedirs(local, exist_ok=True)
+    return local
+
+
 def looks_like_metrc(value: str) -> bool:
     return bool(METRC_RE.match(str(value).strip()))
 
@@ -293,14 +302,14 @@ def main():
 
     # ---- sidebar: data source ----
     st.sidebar.header("📄 Data Source")
-    data_dir = st.sidebar.text_input("Export folder", DEFAULT_DATA_DIR)
+    data_dir = st.sidebar.text_input("Export folder", resolve_default_dir())
 
-    # Uploads persist to the export folder so the newest matching export is used.
-    # Saving to disk = the dataset survives restarts.
-    with st.sidebar.expander("⬆️ Upload refreshed exports"):
-        st.caption("Re-export from Blaze after changes and drop the files here. "
-                   "They're saved into the export folder and used immediately; "
-                   "the dataset persists on disk across restarts.")
+    # Uploads are saved into the export folder so the newest matching export is used.
+    # Local: persists across restarts. Hosted (Cloud): the filesystem is per-session.
+    with st.sidebar.expander("⬆️ Upload exports", expanded=False):
+        st.caption("Re-export from Blaze and drop the files here. They're saved into "
+                   "the export folder and used immediately. On a hosted deployment the "
+                   "filesystem is per-session, so re-upload after the app restarts.")
         uploaders = [("Products", st.file_uploader("Products export CSV", type="csv", key="up_prod")),
                      ("Batches", st.file_uploader("Batch export CSV", type="csv", key="up_batch"))]
         saved = []
@@ -308,20 +317,27 @@ def main():
             if up is not None:
                 s = (up.name, getattr(up, "size", None))
                 if st.session_state.get(f"saved_{label}") != s:
+                    os.makedirs(data_dir, exist_ok=True)
                     with open(os.path.join(data_dir, up.name), "wb") as fh:
                         fh.write(up.getbuffer())
                     st.session_state[f"saved_{label}"] = s
                     saved.append(up.name)
         if saved:
             st.cache_data.clear()
-            st.success("Saved + persisted: " + ", ".join(saved))
+            st.success("Saved: " + ", ".join(saved))
             st.rerun()
 
     prod_path = latest_match(data_dir, PRODUCTS_GLOB)
     batch_path = latest_match(data_dir, BATCH_GLOB)
     if not prod_path or not batch_path:
-        st.error("Need a `*COMPANY_PRODUCTS_EXPORT*.csv` **and** a "
-                 "`*COMPANY_PRODUCT_BATCH_EXPORT*.csv` in the export folder.")
+        missing = []
+        if not prod_path:
+            missing.append("Products export (`*COMPANY_PRODUCTS_EXPORT*.csv`)")
+        if not batch_path:
+            missing.append("Batch export (`*COMPANY_PRODUCT_BATCH_EXPORT*.csv`)")
+        st.info("### ⬆️ Upload the Blaze company exports to begin\n\n"
+                "Use **Upload exports** in the sidebar. Still needed: "
+                + "; ".join(missing) + ".")
         st.stop()
     st.sidebar.caption(f"**Products:** {os.path.basename(prod_path)}")
     st.sidebar.caption(f"**Batches:** {os.path.basename(batch_path)}")
