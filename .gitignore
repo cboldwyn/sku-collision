@@ -1,0 +1,13 @@
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.streamlit/secrets.toml
+.vscode/
+.idea/
+*.swp
+# Blaze exports are large + sensitive; never commit
+*.csv
+explore*.py
+test_logic.py

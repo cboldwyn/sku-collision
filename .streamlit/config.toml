@@ -1,0 +1,11 @@
+[theme]
+primaryColor = "#3DC0CC"
+secondaryBackgroundColor = "#F3FBFC"
+
+[browser]
+gatherUsageStats = false
+
+[server]
+headless = true
+port = 8501
+maxUploadSize = 300
