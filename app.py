@@ -20,6 +20,8 @@ Reads the two Blaze COMPANY exports directly from disk (no 130MB re-upload):
 
 CHANGELOG:
 v1.0 (2026-05-29) - Initial build. Product-ID-anchored. Type 1/2/3 + browse.
+v1.1 (2026-06-01) - Shop / brand / in-stock filters on the Type 2 (batch-ID-in-SKU)
+                    view, per the Forced Scanning and SKU Integrity call.
 """
 
 import glob
@@ -34,7 +36,7 @@ import streamlit as st
 # CONFIGURATION
 # ============================================================================
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 DEFAULT_DATA_DIR = r"C:\Users\Charles\archangels\_Working Files"
 PRODUCTS_GLOB = "*COMPANY_PRODUCTS_EXPORT*.csv"
 BATCH_GLOB = "*COMPANY_PRODUCT_BATCH_EXPORT*.csv"
@@ -181,6 +183,7 @@ def compute_type2(_prod: pd.DataFrame, _batch: pd.DataFrame, sig: str) -> pd.Dat
         sku = r["SKU"]
         rows.append({
             "Product": r["Item"],
+            "Brand": r["Brand"],
             "Shop": r["Shop"],
             "SKU (is a Batch ID)": sku,
             "Active": r["Active"],
@@ -445,13 +448,31 @@ def main():
         if t2.empty:
             st.success("No products have a Batch ID in their SKU field. 🎉")
         else:
-            st.markdown(f"**{len(t2):,}** product rows · "
-                        f"**{t2['SKU (is a Batch ID)'].nunique():,}** distinct SKUs.")
-            st.dataframe(t2, use_container_width=True, hide_index=True, height=460,
+            bf1, bf2, bf3 = st.columns([1, 1, 1])
+            t2_shops = sorted(s for s in t2["Shop"].unique() if s)
+            t2_brands = sorted(b for b in t2["Brand"].unique() if b)
+            sel_shops2 = bf1.multiselect("Shop", t2_shops, key="t2_shop")
+            sel_brands2 = bf2.multiselect("Brand", t2_brands, key="t2_brand")
+            instock2 = bf3.toggle("In-stock only", value=False, key="t2_inv",
+                                  help="Keep only rows with Inventory > 0 (what's "
+                                       "ready to sell now).")
+            view2 = t2
+            if sel_shops2:
+                view2 = view2[view2["Shop"].isin(sel_shops2)]
+            if sel_brands2:
+                view2 = view2[view2["Brand"].isin(sel_brands2)]
+            if instock2:
+                view2 = view2[pd.to_numeric(view2["Inventory"], errors="coerce").fillna(0) > 0]
+            cols2 = ["Product", "Brand", "Shop", "SKU (is a Batch ID)", "Active",
+                     "Inventory", "Same product?", "Batch belongs to", "Batch status",
+                     "Blaze"]
+            st.markdown(f"**{len(view2):,}** of {len(t2):,} product rows · "
+                        f"**{view2['SKU (is a Batch ID)'].nunique():,}** distinct SKUs.")
+            st.dataframe(view2[cols2], use_container_width=True, hide_index=True, height=460,
                 column_config={
                     "Product": st.column_config.TextColumn(width="medium"),
                     "Blaze": st.column_config.LinkColumn("Blaze", display_text="open ↗")})
-            df_download(t2, "📥 Download list", "sku_batch_id_in_sku.csv")
+            df_download(view2, "📥 Download list", "sku_batch_id_in_sku.csv")
 
     # ---------------- TAB 3 ----------------
     with tabs[2]:
@@ -526,6 +547,8 @@ a collision. *Multi-brand* (different brands on one SKU) is highest severity;
 **② Batch ID in the SKU field.** Products whose SKU is an exact 1:1 match to a
 `Batch ID` from the batch export — a batch code sitting in the SKU field instead of
 a stable product SKU. Listed per shop-level product so each can be fixed in Blaze.
+Per-view filters (shop, brand, in-stock) narrow to what a single store or vendor
+owner is working right now.
 
 **③ SKU drift within a master.** One `Master Product ID` whose Product IDs carry
 2+ distinct SKUs across shops. "All SKUs METRC-shaped" flags the tag-as-SKU pattern.
@@ -551,7 +574,9 @@ disk and survives restarts; the newest matching export is always used. Hit
 
     st.sidebar.markdown("---")
     with st.sidebar.expander("📋 Changelog"):
-        st.markdown("**v1.0.0** (2026-05-29)\n- Product-ID-anchored build: "
+        st.markdown("**v1.1.0** (2026-06-01)\n- Shop / brand / in-stock filters on "
+                    "the ② Batch-ID-in-SKU view.\n\n"
+                    "**v1.0.0** (2026-05-29)\n- Product-ID-anchored build: "
                     "Type 1 (diff products / same SKU), Type 2 (SKU = batch code), "
                     "Type 3 (SKU drift within master), browse + methodology.")
     st.sidebar.markdown(f"**Version {VERSION}**")
